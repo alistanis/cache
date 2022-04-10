@@ -77,7 +77,9 @@ func (c *Cache[K, V]) Put(k K, e V) {
 
 func (c *Cache[K, V]) evict() {
 	e := c.list.Back()
-
+	if e == nil {
+		return
+	}
 	kv := e.Value
 
 	c.list.Remove(e)
@@ -100,6 +102,11 @@ func (c *Cache[K, V]) Resize(size int) {
 	if c.capacity == size {
 		return
 	} else if c.capacity < size {
+		c.capacity = size
+		return
+	}
+
+	if c.size == size {
 		c.capacity = size
 		return
 	}
