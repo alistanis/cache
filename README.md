@@ -101,6 +101,8 @@ func main() {
 			// get value from backing store
 			// res := db.Query(...)
 			// v = getValFromRes(res)
+			// put value back into cache
+			// c.Put(i, v)
 			v = 0
 		} else {
 			if i != v {
