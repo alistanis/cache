@@ -1,6 +1,7 @@
 // Copyright 2022, 2009 Christopher Cooper, the Go Authors. All rights reserved.
-// Use of this source code is governed by a BSD-style
-// license that can be found in the LICENSE file.
+// Use of this source code is governed by a MIT
+// license that can be found in the LICENSE file
+// and the BSD-Style license in the Go SDK.
 
 // Package list implements a doubly linked list.
 //
