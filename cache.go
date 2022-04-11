@@ -92,7 +92,7 @@ func (g *Cache[K, V]) Remove(k K) (found bool) {
 // Each calls the function f on each element in the cache. This call is thread safe but not atomic across cache
 // boundaries. This call is not particularly recommended if atomic consistency across the entire cache is needed
 // and other goroutines may be mutating values in the cache. It is consistent when actively processing values
-// inside an individual cache, however.
+// inside an individual cache partition, however.
 func (g *Cache[K, V]) Each(f func(k K, v V)) {
 	for _, c := range g.clients {
 		c.Each(f)

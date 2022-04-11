@@ -202,23 +202,3 @@ func (l *List[E]) PushFrontList(other *List[E]) {
 		l.insertValue(e.Value, &l.root)
 	}
 }
-
-// Each calls 'fn' on every element from this node onward in the list.
-func (n *Node[E]) Each(fn func(val E)) {
-	node := n
-	end := n.List.Back()
-	for node != end.Next {
-		fn(node.Value)
-		node = node.Next
-	}
-}
-
-// EachReverse calls 'fn' on every element from this node backward in the list.
-func (n *Node[E]) EachReverse(fn func(val E)) {
-	node := n
-	front := n.List.Front()
-	for node != front.Prev {
-		fn(node.Value)
-		node = node.Prev
-	}
-}

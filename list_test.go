@@ -110,3 +110,24 @@ func TestList(t *testing.T) {
 	Assert.EqualValues("Test", l.Front().Value)
 	Assert.EqualValues("Goodbye", l.Back().Value)
 }
+
+func TestList_NonOwnedNodes(t *testing.T) {
+	Assert := assert.New(t)
+
+	l := NewList[int]()
+
+	n := l.PushFront(42)
+
+	l2 := NewList[int]()
+
+	Assert.Nil(l2.InsertBefore(1, n))
+	Assert.Nil(l2.InsertAfter(1, n))
+
+	Assert.NotPanics(func() { l.MoveToBack(n) })
+	Assert.NotPanics(func() { l.MoveAfter(n, n) })
+
+	n2 := l.PushBack(1)
+
+	l.MoveBefore(n2, n)
+	Assert.EqualValues(1, l.Front().Value)
+}
