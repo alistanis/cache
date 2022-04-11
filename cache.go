@@ -1,7 +1,9 @@
+//
 package cache
 
 import (
 	"context"
+	"github.com/alistanis/cache/list"
 	"github.com/mitchellh/hashstructure/v2"
 )
 
@@ -13,8 +15,8 @@ type KVPair[K comparable, V any] struct {
 
 // cache is a generic LRU cache backed with a doubly linked list and a map
 type cache[K comparable, V any] struct {
-	table map[K]*Node[KVPair[K, V]]
-	list  *List[KVPair[K, V]]
+	table map[K]*list.Node[KVPair[K, V]]
+	list  *list.List[KVPair[K, V]]
 
 	GetRequest    *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
 	PutRequest    *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
@@ -120,8 +122,8 @@ func (g *Cache[K, V]) Wait() {
 func newCache[K comparable, V any](capacity int) *cache[K, V] {
 
 	c := &cache[K, V]{
-		table:         make(map[K]*Node[KVPair[K, V]]),
-		list:          NewList[KVPair[K, V]](),
+		table:         make(map[K]*list.Node[KVPair[K, V]]),
+		list:          list.New[KVPair[K, V]](),
 		size:          0,
 		capacity:      capacity,
 		GetRequest:    NewRequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]](),
@@ -182,7 +184,7 @@ func (c *cache[K, V]) evict() {
 // evicted from the cache.
 func (c *cache[K, V]) Remove(k K) bool {
 	var ok bool
-	var n *Node[KVPair[K, V]]
+	var n *list.Node[KVPair[K, V]]
 	if n, ok = c.table[k]; ok {
 		c.list.Remove(n)
 		c.size--

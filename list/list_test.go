@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package cache
+package list
 
 import (
 	"github.com/stretchr/testify/assert"
@@ -13,9 +13,11 @@ func TestNewList(t *testing.T) {
 
 	Assert := assert.New(t)
 
-	l := NewList[int]()
+	l := New[int]()
 
 	n := l.Front()
+	Assert.Nil(n)
+	n = l.Back()
 	Assert.Nil(n)
 
 	n1 := l.PushFront(42)
@@ -90,7 +92,7 @@ func TestList(t *testing.T) {
 	l.MoveToBack(l.Front())
 	Assert.EqualValues(f, l.Front())
 
-	l2 := NewList[string]()
+	l2 := New[string]()
 
 	l2.PushBack("Hello")
 	l2.PushBack("Goodbye")
@@ -101,7 +103,7 @@ func TestList(t *testing.T) {
 	Assert.EqualValues("42", l.Front().Value)
 	Assert.EqualValues("Goodbye", l.Back().Value)
 
-	l3 := NewList[string]()
+	l3 := New[string]()
 
 	l3.PushBack("Test")
 	l.PushFrontList(l3)
@@ -109,20 +111,25 @@ func TestList(t *testing.T) {
 	Assert.EqualValues(5, l.Len())
 	Assert.EqualValues("Test", l.Front().Value)
 	Assert.EqualValues("Goodbye", l.Back().Value)
+
+	b = l.Back()
+	l.MoveToFront(l.Back())
+	Assert.EqualValues(b, l.Front())
 }
 
 func TestList_NonOwnedNodes(t *testing.T) {
 	Assert := assert.New(t)
 
-	l := NewList[int]()
+	l := New[int]()
 
 	n := l.PushFront(42)
 
-	l2 := NewList[int]()
+	l2 := New[int]()
 
 	Assert.Nil(l2.InsertBefore(1, n))
 	Assert.Nil(l2.InsertAfter(1, n))
 
+	Assert.NotPanics(func() { l.MoveToFront(n) })
 	Assert.NotPanics(func() { l.MoveToBack(n) })
 	Assert.NotPanics(func() { l.MoveAfter(n, n) })
 

@@ -1,4 +1,16 @@
-package cache
+// Copyright 2022, 2009 Christopher Cooper, the Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
+// Package list implements a doubly linked list.
+//
+// To iterate over a list (where l is a *List):
+//	for e := l.Front(); e != nil; e = e.Next() {
+//		// do something with e.Value
+//	}
+//
+// This implementation is a generic copy from the Go SDK using Type Parameters.
+package list
 
 // List implements a doubly-linked list.
 type List[E any] struct {
@@ -32,8 +44,8 @@ func (l *List[E]) lazyInit() {
 	}
 }
 
-// NewList returns an empty linked list.
-func NewList[E any]() *List[E] {
+// New returns an empty linked list.
+func New[E any]() *List[E] {
 	return new(List[E]).Init()
 }
 
