@@ -23,11 +23,16 @@ type cache[K comparable, V any] struct {
 	table map[K]*list.Node[KVPair[K, V]]
 	list  *list.List[KVPair[K, V]]
 
-	GetRequest    *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
-	PutRequest    *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
+	// GetRequest is a request channel parameterized for getting values from the cache
+	GetRequest *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
+	// PutRequest is a request channel parameterized for putting values into the cache
+	PutRequest *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
+	// RemoveRequest is a request channel parameterized for removing values from the cache
 	RemoveRequest *RequestChannel[Request[K, bool], bool]
 
+	// EachRequest is a request channel parameterized for running a function on each object in this cache
 	EachRequest *RequestChannel[Request[func(K, V), struct{}], struct{}]
+	// MetaRequest is a request channel parameterized for retrieving metadata about this cache
 	MetaRequest *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
 	size        int
 	capacity    int
@@ -36,7 +41,9 @@ type cache[K comparable, V any] struct {
 // MetaResponse is a structure for returning metadata responses, in this case, just the Length and Capacity of the
 // current cache
 type MetaResponse struct {
+	// Len is the length of the cache
 	Len int
+	// Cap is the capacity of the cache
 	Cap int
 }
 
@@ -46,14 +53,6 @@ type MetaResponse struct {
 type Cache[K comparable, V any] struct {
 	caches  []*cache[K, V]
 	clients []*Client[K, V]
-
-	GetRequest    *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
-	PutRequest    *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
-	RemoveRequest *RequestChannel[Request[K, bool], bool]
-
-	EachRequest *RequestChannel[Request[func(K, V), struct{}], struct{}]
-
-	MetaRequest *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
 }
 
 // New initializes and returns a Cache object. Each internal cache runs its own goroutine, the number of which is
@@ -240,8 +239,10 @@ func (c *cache[K, V]) Each(fn func(K, V)) {
 
 // Request is a request object sent over a channel. The Response type is used to create a Response chan.
 type Request[T any, Response any] struct {
+	// ResponseChannel is a generic channel that can send and receive objects parameterized as a Response
 	ResponseChannel chan Response
-	RequestBody     T
+	// RequestBody is the value of the request key
+	RequestBody T
 }
 
 // NewRequest creates a new Request
@@ -272,19 +273,29 @@ type GetResponse[K comparable, V any] struct {
 
 // Client is a structure responsible for talking to cache objects
 type Client[K comparable, V any] struct {
-	GetRequest         *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
+	// GetRequest is a request channel for retrieving values from the cache for which this client is associated
+	GetRequest *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
+	// GetResponseChannel is a channel for receiving GetRequest responses
 	GetResponseChannel chan GetResponse[K, V]
 
-	PutRequest         *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
+	// PutRequest is a request channel for placing values into the cache for which this client is associated
+	PutRequest *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
+	// PutResponseChannel is a channel for receiving acknowledgment that a Put request has finished
 	PutResponseChannel chan struct{}
 
-	RemoveRequest         *RequestChannel[Request[K, bool], bool]
+	// RemoveRequest is a request channel for removing values from the cache for which this client is associated
+	RemoveRequest *RequestChannel[Request[K, bool], bool]
+	// RemoveResponseChannel is a channel for receiving acknowledgment that a Remove request has finished and whether anything was removed
 	RemoveResponseChannel chan bool
 
-	EachRequest         *RequestChannel[Request[func(K, V), struct{}], struct{}]
+	// EachRequest is a request channel for running functions on each element in the cache for which this client is associated
+	EachRequest *RequestChannel[Request[func(K, V), struct{}], struct{}]
+	// EachResponseChannel is a channel for receiving acknowledgment that all items in this cache have been processed
 	EachResponseChannel chan struct{}
 
-	MetaRequest             *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
+	// MetaRequest is a request channel for requesting metadata about ths cache for which this client is associated
+	MetaRequest *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
+	// MetaDataResponseChannel is a channel for receiving meta data about the cache for which this client is associated
 	MetaDataResponseChannel chan MetaResponse
 
 	finished chan struct{}
