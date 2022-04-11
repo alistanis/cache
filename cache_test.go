@@ -171,8 +171,8 @@ func TestCache(t *testing.T) {
 	}
 
 	met := c.Meta()
-	Assert.EqualValues(capacity*10, met.Cap)
-	Assert.EqualValues(capacity*10, met.Len)
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Cap)
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Len)
 
 	c.Put(1, 1)
 
@@ -188,13 +188,13 @@ func TestCache(t *testing.T) {
 	Assert.EqualValues(1, v)
 	Assert.True(found)
 
-	i := make([]int, 0, capacity*10)
+	i := make([]int, 0, capacity*runtime.NumCPU())
 
 	c.Each(func(k, v int) {
 		i = append(i, v)
 	})
 
-	Assert.EqualValues(capacity*10, len(i))
+	Assert.EqualValues(capacity*runtime.NumCPU(), len(i))
 
 	cancel()
 }
@@ -218,8 +218,8 @@ func TestCache_String(t *testing.T) {
 	}
 
 	met := c.Meta()
-	Assert.EqualValues(capacity*10, met.Cap)
-	Assert.EqualValues(capacity*10, met.Len)
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Cap)
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Len)
 
 	v, found := c.Get(string(b))
 	Assert.True(found)
