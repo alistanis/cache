@@ -3,13 +3,16 @@ package cache
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func Example() {
-	c := New[int, int](2)
+	c := newCache[int, int](2)
 
 	c.Put(42, 42)
 	c.Put(10, 10)
@@ -24,94 +27,94 @@ func Example() {
 	// 42
 }
 
-func TestCache(t *testing.T) {
+func Test_cache(t *testing.T) {
 
 	Assert := assert.New(t)
 
-	cache := New[int, string](4)
-	cache.Put(42, "42")
+	c := newCache[int, string](4)
+	c.Put(42, "42")
 
-	Assert.EqualValues(cache.Size(), 1)
+	Assert.EqualValues(c.Size(), 1)
 
-	s, ok := cache.Get(42)
+	s, ok := c.Get(42)
 	Assert.True(ok)
 
 	Assert.EqualValues("42", s)
 
-	s, ok = cache.Get(0)
+	s, ok = c.Get(0)
 	Assert.False(ok)
 
 	// replace existing value
-	cache.Put(42, "24")
-	s, ok = cache.Get(42)
+	c.Put(42, "24")
+	s, ok = c.Get(42)
 	Assert.True(ok)
 
 	Assert.EqualValues("24", s)
 
-	cache.Resize(1)
+	c.Resize(1)
 
-	cache.Put(24, "42")
+	c.Put(24, "42")
 
-	Assert.EqualValues(1, cache.Size())
-	s, ok = cache.Get(24)
+	Assert.EqualValues(1, c.Size())
+	s, ok = c.Get(24)
 
 	Assert.True(ok)
 	Assert.EqualValues("42", s)
 
-	cache.Resize(2)
+	c.Resize(2)
 
 	// resizing does not crash
-	Assert.NotPanics(func() { cache.Resize(2) })
+	Assert.NotPanics(func() { c.Resize(2) })
 
-	cache.Put(42, "24")
+	c.Put(42, "24")
 
-	Assert.EqualValues(2, cache.Size())
+	Assert.EqualValues(2, c.Size())
 
-	s, ok = cache.Get(42)
+	s, ok = c.Get(42)
 	Assert.True(ok)
 	Assert.EqualValues("24", s)
 
-	cache.Put(1, "2")
+	c.Put(1, "2")
 
-	Assert.EqualValues(2, cache.Size())
-	s, ok = cache.Get(42)
+	Assert.EqualValues(2, c.Size())
+	s, ok = c.Get(42)
 	Assert.True(ok)
 	Assert.EqualValues("24", s)
 
-	_, ok = cache.Get(24)
+	_, ok = c.Get(24)
 	Assert.False(ok)
 
-	n := cache.list.Front()
+	n := c.list.Front()
 
 	Assert.EqualValues("24", n.Value.Val)
 
-	cache.Resize(4)
+	c.Resize(4)
 
-	Assert.EqualValues(4, cache.Capacity())
-	Assert.EqualValues(2, cache.Size())
+	Assert.EqualValues(4, c.Capacity())
+	Assert.EqualValues(2, c.Size())
 
-	cache.Put(2, "3")
-	cache.Put(3, "4")
-	Assert.EqualValues(4, cache.Size())
+	c.Put(2, "3")
+	c.Put(3, "4")
+	Assert.EqualValues(4, c.Size())
 
-	cache.Put(4, "5")
+	c.Put(4, "5")
 
-	Assert.EqualValues(4, cache.Size())
+	Assert.EqualValues(4, c.Size())
 
-	cache.Resize(1)
+	c.Resize(1)
 
-	Assert.EqualValues(1, cache.Size())
-	s, ok = cache.Get(4)
+	Assert.EqualValues(1, c.Size())
+	s, ok = c.Get(4)
 
 	Assert.True(ok)
 	Assert.EqualValues("5", s)
 
-	cache.evict()
-	cache.evict()
-	cache.evict()
-	cache.evict()
+	c.evict()
+	c.evict()
+	c.evict()
+	c.evict()
 
-	Assert.NotPanics(func() { cache.evict() })
+	Assert.NotPanics(func() { c.evict() })
 }
 
 type sPair struct {
@@ -119,13 +122,13 @@ type sPair struct {
 	s2 string
 }
 
-func TestCache_Serve(t *testing.T) {
+func Test_cache_Serve(t *testing.T) {
 	Assert := assert.New(t)
 
-	cache := New[string, string](5)
+	ca := newCache[string, string](5)
 	ctx, cancel := context.WithCancel(context.Background())
-	c := cache.Serve(ctx)
-
+	c := ca.Serve(ctx)
+	defer c.Wait()
 	pairs := []sPair{
 		{"Hello", "Goodbye"},
 		{"1", "2"},
@@ -152,6 +155,142 @@ func TestCache_Serve(t *testing.T) {
 	})
 
 	cancel()
-	c.Wait()
 
+}
+
+func TestCache(t *testing.T) {
+	Assert := assert.New(t)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	capacity := 1000
+	c := New[int, int](ctx, capacity, runtime.NumCPU())
+	defer c.Wait()
+
+	for i := 0; i < capacity*10*runtime.NumCPU(); i++ {
+		c.Put(i, i)
+	}
+
+	met := c.Meta()
+	Assert.EqualValues(capacity*10, met.Cap)
+	Assert.EqualValues(capacity*10, met.Len)
+
+	c.Put(1, 1)
+
+	found := c.Remove(1)
+	Assert.True(found)
+
+	found = c.Remove(1)
+	Assert.False(found)
+
+	c.Put(1, 1)
+
+	v, found := c.Get(1)
+	Assert.EqualValues(1, v)
+	Assert.True(found)
+
+	i := make([]int, 0, capacity*10)
+
+	c.Each(func(k, v int) {
+		i = append(i, v)
+	})
+
+	Assert.EqualValues(capacity*10, len(i))
+
+	cancel()
+}
+
+func TestCache_String(t *testing.T) {
+	Assert := assert.New(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	capacity := 1000
+
+	c := New[string, string](ctx, capacity, runtime.NumCPU())
+	defer c.Wait()
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	b := make([]byte, 8)
+	for i := 0; i < capacity*10*runtime.NumCPU(); i++ {
+		read, err := r.Read(b)
+		Assert.EqualValues(8, read)
+		Assert.Nil(err)
+
+		c.Put(string(b), string(b))
+	}
+
+	met := c.Meta()
+	Assert.EqualValues(capacity*10, met.Cap)
+	Assert.EqualValues(capacity*10, met.Len)
+
+	v, found := c.Get(string(b))
+	Assert.True(found)
+	Assert.EqualValues(string(b), v)
+
+	cancel()
+}
+
+func TestCache_Concurrently(t *testing.T) {
+	Assert := assert.New(t)
+	ctx, cancel1 := context.WithCancel(context.Background())
+
+	capacity := 100
+	c := New[int, int](ctx, capacity, runtime.NumCPU())
+	defer c.Wait()
+
+	for i := 0; c.Meta().Len != capacity*runtime.NumCPU(); i++ {
+		c.Put(i, i)
+	}
+
+	is := make([]int, 0, runtime.NumCPU()*capacity)
+	c.Each(func(k, v int) {
+		is = append(is, v)
+	})
+
+	gets := make([]int, 0, runtime.NumCPU())
+
+	for i := 0; i < runtime.NumCPU(); i++ {
+		gets = append(gets, is[i%len(is)])
+	}
+
+	getWait := make(chan struct{})
+	putWait := make(chan struct{})
+
+	c2, cancel2 := context.WithCancel(context.Background())
+	go func(ct context.Context) {
+		for {
+			select {
+			case <-ct.Done():
+				getWait <- struct{}{}
+				return
+			default:
+				for _, i := range gets {
+					v, found := c.Get(i)
+					Assert.True(found)
+					Assert.EqualValues(i, v)
+				}
+			}
+		}
+	}(c2)
+
+	go func(ct context.Context) {
+		for {
+			select {
+			case <-ct.Done():
+				putWait <- struct{}{}
+				return
+			default:
+				for i := 0; i < capacity*runtime.NumCPU(); i++ {
+					c.Put(i, i)
+				}
+			}
+		}
+	}(c2)
+
+	time.Sleep(5 * time.Second)
+	cancel2()
+	<-getWait
+	<-putWait
+
+	Assert.EqualValues(capacity*runtime.NumCPU(), c.Meta().Len)
+
+	cancel1()
 }
