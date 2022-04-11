@@ -245,15 +245,18 @@ func TestCache_Concurrently(t *testing.T) {
 		is = append(is, v)
 	})
 
-	gets := make([]int, 0, runtime.NumCPU())
+	firstPartitionValues := make([]int, 0, capacity)
 
-	for i := 0; i < runtime.NumCPU(); i++ {
-		gets = append(gets, is[i%len(is)])
+	for i := 0; i < capacity; i++ {
+		index := i % len(is)
+		if index != 0 {
+			continue
+		}
+		firstPartitionValues = append(firstPartitionValues, is[index])
 	}
 
 	getWait := make(chan struct{})
 	putWait := make(chan struct{})
-
 	c2, cancel2 := context.WithCancel(context.Background())
 	go func(ct context.Context) {
 		for {
@@ -262,7 +265,7 @@ func TestCache_Concurrently(t *testing.T) {
 				getWait <- struct{}{}
 				return
 			default:
-				for _, i := range gets {
+				for _, i := range firstPartitionValues {
 					v, found := c.Get(i)
 					Assert.True(found)
 					Assert.EqualValues(i, v)
@@ -271,24 +274,21 @@ func TestCache_Concurrently(t *testing.T) {
 		}
 	}(c2)
 
-	go func(ct context.Context) {
-		for {
-			select {
-			case <-ct.Done():
-				putWait <- struct{}{}
-				return
-			default:
-				for i := 0; i < capacity*runtime.NumCPU(); i++ {
-					c.Put(i, i)
-				}
-			}
-		}
-	}(c2)
+	go func() {
 
-	time.Sleep(5 * time.Second)
+		for i := 0; i < capacity; i++ {
+			index := i % len(is)
+			if index != 0 {
+				continue
+			}
+			c.Put(i, i)
+		}
+		putWait <- struct{}{}
+	}()
+
+	<-putWait
 	cancel2()
 	<-getWait
-	<-putWait
 
 	Assert.EqualValues(capacity*runtime.NumCPU(), c.Meta().Len)
 

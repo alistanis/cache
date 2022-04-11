@@ -26,11 +26,16 @@ type cache[K comparable, V any] struct {
 	capacity    int
 }
 
+// MetaResponse is a structure for returning metadata responses, in this case, just the Length and Capacity of the
+// current cache
 type MetaResponse struct {
 	Len int
 	Cap int
 }
 
+// Cache is a thread safe and lockless in memory cache object. This is achieved by partitioning values across many
+// smaller LRU caches and interacting with those caches over channels. Each smaller cache maintains access to its own
+// elements and communicates information back to the Cache object, which then responds back to the original caller.
 type Cache[K comparable, V any] struct {
 	caches  []*cache[K, V]
 	clients []*Client[K, V]
@@ -44,6 +49,8 @@ type Cache[K comparable, V any] struct {
 	MetaRequest *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
 }
 
+// New initializes and returns a Cache object. Each internal cache runs its own goroutine, the number of which is
+// determined by the 'concurrency' parameter
 func New[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int) *Cache[K, V] {
 
 	g := &Cache[K, V]{caches: make([]*cache[K, V], 0, concurrency), clients: make([]*Client[K, V], 0, concurrency)}
@@ -56,6 +63,7 @@ func New[K comparable, V any](ctx context.Context, capacityPerPartition, concurr
 	return g
 }
 
+// Put puts an object in the cache with the key k and value v
 func (g *Cache[K, V]) Put(k K, v V) {
 	hash, _ := hashstructure.Hash(k, hashstructure.FormatV2, nil)
 
@@ -64,6 +72,7 @@ func (g *Cache[K, V]) Put(k K, v V) {
 
 }
 
+// Get retrieves a value from the cache associated with key k, returning value v and bool found
 func (g *Cache[K, V]) Get(k K) (v V, found bool) {
 	hash, _ := hashstructure.Hash(k, hashstructure.FormatV2, nil)
 
@@ -72,6 +81,7 @@ func (g *Cache[K, V]) Get(k K) (v V, found bool) {
 	return resp.Val, resp.Found
 }
 
+// Remove removes an object from the cache associated with key k, returning found
 func (g *Cache[K, V]) Remove(k K) (found bool) {
 	hash, _ := hashstructure.Hash(k, hashstructure.FormatV2, nil)
 
@@ -79,12 +89,17 @@ func (g *Cache[K, V]) Remove(k K) (found bool) {
 	return g.clients[index].Remove(k)
 }
 
+// Each calls the function f on each element in the cache. This call is thread safe but not atomic across cache
+// boundaries. This call is not particularly recommended if atomic consistency across the entire cache is needed
+// and other goroutines may be mutating values in the cache. It is consistent when actively processing values
+// inside an individual cache, however.
 func (g *Cache[K, V]) Each(f func(k K, v V)) {
 	for _, c := range g.clients {
 		c.Each(f)
 	}
 }
 
+// Meta returns metadata about the cache, namely Length and Capacity
 func (g *Cache[K, V]) Meta() (data MetaResponse) {
 	for _, c := range g.clients {
 		d := c.Meta()
@@ -94,6 +109,7 @@ func (g *Cache[K, V]) Meta() (data MetaResponse) {
 	return
 }
 
+// Wait waits to close all clients and channels associated with this cache
 func (g *Cache[K, V]) Wait() {
 	for _, c := range g.clients {
 		c.Wait()
@@ -149,6 +165,7 @@ func (c *cache[K, V]) Put(k K, e V) {
 	c.table[k] = n
 }
 
+// evict removes the least recently used value in this cache
 func (c *cache[K, V]) evict() {
 	e := c.list.Back()
 	if e == nil {
@@ -214,32 +231,39 @@ func (c *cache[K, V]) Each(fn func(K, V)) {
 	}
 }
 
+// Request is a request object sent over a channel. The Response type is used to create a Response chan.
 type Request[T any, Response any] struct {
 	ResponseChannel chan Response
 	RequestBody     T
 }
 
+// NewRequest creates a new Request
 func NewRequest[T any, Response any](request T, responseChannel chan Response) *Request[T, Response] {
 	return &Request[T, Response]{responseChannel, request}
 }
 
+// RequestChannel is a struct wrapper around a generic request channel type
 type RequestChannel[Request any, Response any] struct {
 	channel chan *Request
 }
 
+// NewRequestChannel returns a new RequestChannel wrapper for Request and Response over channels
 func NewRequestChannel[Request any, Response any]() *RequestChannel[Request, Response] {
 	return &RequestChannel[Request, Response]{channel: make(chan *Request)}
 }
 
+// Close shuts the RequestChannel channel down
 func (r RequestChannel[Request, Response]) Close() {
 	close(r.channel)
 }
 
+// GetResponse is a struct wrapper for a Cache Get response
 type GetResponse[K comparable, V any] struct {
 	KVPair[K, V]
 	Found bool
 }
 
+// Client is a structure responsible for talking to cache objects
 type Client[K comparable, V any] struct {
 	GetRequest         *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
 	GetResponseChannel chan GetResponse[K, V]
@@ -259,11 +283,13 @@ type Client[K comparable, V any] struct {
 	finished chan struct{}
 }
 
+// Get gets an object associated with key k
 func (c *Client[K, V]) Get(k K) GetResponse[K, V] {
 	c.GetRequest.channel <- NewRequest[K, GetResponse[K, V]](k, c.GetResponseChannel)
 	return <-c.GetResponseChannel
 }
 
+// Put puts an object with key k and value v
 func (c *Client[K, V]) Put(k K, v V) {
 	pair := KVPair[K, V]{k, v}
 	req := NewRequest[KVPair[K, V], struct{}](pair, c.PutResponseChannel)
@@ -272,21 +298,25 @@ func (c *Client[K, V]) Put(k K, v V) {
 	<-c.PutResponseChannel
 }
 
+// Remove deletes a value associated with key k
 func (c *Client[K, V]) Remove(k K) bool {
 	c.RemoveRequest.channel <- NewRequest[K, bool](k, c.RemoveResponseChannel)
 	return <-c.RemoveResponseChannel
 }
 
+// Each runs the function fn on each value associated with this client's cache
 func (c *Client[K, V]) Each(fn func(k K, v V)) {
 	c.EachRequest.channel <- NewRequest[func(K, V), struct{}](fn, c.EachResponseChannel)
 	<-c.EachResponseChannel
 }
 
+// Meta returns metadata about this client's cache
 func (c *Client[K, V]) Meta() (data MetaResponse) {
 	c.MetaRequest.channel <- NewRequest[struct{}, MetaResponse](struct{}{}, c.MetaDataResponseChannel)
 	return <-c.MetaDataResponseChannel
 }
 
+// Wait waits until all work is finished for this client and closes all communication channels
 func (c *Client[K, V]) Wait() {
 
 	<-c.finished
@@ -297,6 +327,7 @@ func (c *Client[K, V]) Wait() {
 	c.MetaRequest.Close()
 }
 
+// NewClient returns a new client initialized for work
 func (c *cache[K, V]) NewClient() *Client[K, V] {
 	return &Client[K, V]{
 		c.GetRequest, make(chan GetResponse[K, V]),
@@ -307,6 +338,7 @@ func (c *cache[K, V]) NewClient() *Client[K, V] {
 		make(chan struct{})}
 }
 
+// Serve returns a new client and starts a goroutine responsible for handling all IO for this cache
 func (c *cache[K, V]) Serve(ctx context.Context) (client *Client[K, V]) {
 
 	client = c.NewClient()
