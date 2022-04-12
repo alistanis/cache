@@ -123,3 +123,27 @@ func main() {
 	cancel()
 }
 ```
+
+# Benchmarks
+
+```
+go test -v -benchmem ./... -bench . -run=bench
+
+goos: darwin
+goarch: arm64
+pkg: github.com/alistanis/cache
+BenchmarkCache_SingleThread
+BenchmarkCache_SingleThread/Put
+BenchmarkCache_SingleThread/Put-8        1418739               842.0 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_SingleThread/Get
+BenchmarkCache_SingleThread/Get-8        1782422               670.2 ns/op            47 B/op          4 allocs/op
+BenchmarkCache_IntInt_ParallelPut
+BenchmarkCache_IntInt_ParallelPut-8      6825015               172.6 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_IntInt_ParallelGet
+BenchmarkCache_IntInt_ParallelGet-8      8875476               134.2 ns/op            48 B/op          5 allocs/op
+PASS
+ok      github.com/alistanis/cache      6.577s
+PASS
+ok      github.com/alistanis/cache/list 0.083s
+
+```

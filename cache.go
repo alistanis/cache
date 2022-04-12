@@ -161,12 +161,10 @@ func (c *cache[K, V]) Put(k K, e V) {
 		c.evict()
 	}
 
-	kv := KVPair[K, V]{
+	n := c.list.PushFront(KVPair[K, V]{
 		Key: k,
 		Val: e,
-	}
-
-	n := c.list.PushFront(kv)
+	})
 	c.size++
 	c.table[k] = n
 }
