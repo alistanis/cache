@@ -132,18 +132,27 @@ go test -v -benchmem ./... -bench . -run=bench
 goos: darwin
 goarch: arm64
 pkg: github.com/alistanis/cache
-BenchmarkCache_SingleThread
-BenchmarkCache_SingleThread/Put
-BenchmarkCache_SingleThread/Put-8        1418739               842.0 ns/op           110 B/op          6 allocs/op
-BenchmarkCache_SingleThread/Get
-BenchmarkCache_SingleThread/Get-8        1782422               670.2 ns/op            47 B/op          4 allocs/op
+BenchmarkCache_IntInt_SingleThread
+BenchmarkCache_IntInt_SingleThread/Put
+BenchmarkCache_IntInt_SingleThread/Put-8         1442264               824.1 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_IntInt_SingleThread/Get
+BenchmarkCache_IntInt_SingleThread/Get-8         1814316               662.7 ns/op            47 B/op          4 allocs/op
 BenchmarkCache_IntInt_ParallelPut
-BenchmarkCache_IntInt_ParallelPut-8      6825015               172.6 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_IntInt_ParallelPut-8              6645994               183.5 ns/op           110 B/op          6 allocs/op
 BenchmarkCache_IntInt_ParallelGet
-BenchmarkCache_IntInt_ParallelGet-8      8875476               134.2 ns/op            48 B/op          5 allocs/op
+BenchmarkCache_IntInt_ParallelGet-8              8311953               138.8 ns/op            48 B/op          5 allocs/op
+BenchmarkCache_StringString_SingleThread
+BenchmarkCache_StringString_SingleThread/Put
+BenchmarkCache_StringString_SingleThread/Put-8           1000000              1073 ns/op             209 B/op          9 allocs/op
+BenchmarkCache_StringString_SingleThread/Get
+BenchmarkCache_StringString_SingleThread/Get-8           1444695               828.3 ns/op            87 B/op          5 allocs/op
+BenchmarkCache_StringString_ParallelPut
+BenchmarkCache_StringString_ParallelPut-8                4905408               238.7 ns/op           209 B/op          9 allocs/op
+BenchmarkCache_StringString_ParallelGet
+BenchmarkCache_StringString_ParallelGet-8                6977521               170.2 ns/op            88 B/op          6 allocs/op
 PASS
-ok      github.com/alistanis/cache      6.577s
+ok      github.com/alistanis/cache      12.475s
 PASS
-ok      github.com/alistanis/cache/list 0.083s
+ok      github.com/alistanis/cache/list 0.093s
 
 ```
