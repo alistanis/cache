@@ -157,3 +157,98 @@ PASS
 ok      github.com/alistanis/cache/list 0.093s
 
 ```
+
+### MacBook Pro (M1 Pro, 16-inch, 2021), 16GB Ram
+```
+go test -v -benchmem ./... -bench . -run=bench
+goos: darwin
+goarch: arm64
+pkg: github.com/alistanis/cache
+BenchmarkCache_IntInt_SingleThread
+BenchmarkCache_IntInt_SingleThread/Put
+BenchmarkCache_IntInt_SingleThread/Put-10        1431043               825.7 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_IntInt_SingleThread/Get
+BenchmarkCache_IntInt_SingleThread/Get-10        1772635               673.3 ns/op            47 B/op          4 allocs/op
+BenchmarkCache_IntInt_ParallelPut
+BenchmarkCache_IntInt_ParallelPut-10             6866359               179.5 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_IntInt_ParallelGet
+BenchmarkCache_IntInt_ParallelGet-10             8667046               138.0 ns/op            48 B/op          5 allocs/op
+BenchmarkCache_StringString_SingleThread
+BenchmarkCache_StringString_SingleThread/Put
+BenchmarkCache_StringString_SingleThread/Put-10                  1000000              1094 ns/op             209 B/op          9 allocs/op
+BenchmarkCache_StringString_SingleThread/Get
+BenchmarkCache_StringString_SingleThread/Get-10                  1455924               822.9 ns/op            87 B/op          5 allocs/op
+BenchmarkCache_StringString_ParallelPut
+BenchmarkCache_StringString_ParallelPut-10                       4883151               280.0 ns/op           209 B/op          9 allocs/op
+BenchmarkCache_StringString_ParallelGet
+BenchmarkCache_StringString_ParallelGet-10                       6611814               190.0 ns/op            88 B/op          6 allocs/op
+PASS
+ok      github.com/alistanis/cache      13.023s
+PASS
+ok      github.com/alistanis/cache/list 0.156s
+
+```
+
+### MacBook Pro (Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz, 16-inch, 2019), 64 GB Ram
+```
+go test -v -benchmem ./... -bench . -run=bench
+goos: darwin
+goarch: amd64
+pkg: github.com/alistanis/cache
+cpu: Intel(R) Core(TM) i9-9980HK CPU @ 2.40GHz
+BenchmarkCache_IntInt_SingleThread
+BenchmarkCache_IntInt_SingleThread/Put
+BenchmarkCache_IntInt_SingleThread/Put-16         794200              1452 ns/op             110 B/op          6 allocs/op
+BenchmarkCache_IntInt_SingleThread/Get
+BenchmarkCache_IntInt_SingleThread/Get-16         976036              1184 ns/op              47 B/op          4 allocs/op
+BenchmarkCache_IntInt_ParallelPut
+BenchmarkCache_IntInt_ParallelPut-16             6931814               177.8 ns/op           111 B/op          6 allocs/op
+BenchmarkCache_IntInt_ParallelGet
+BenchmarkCache_IntInt_ParallelGet-16             8706753               138.9 ns/op            48 B/op          5 allocs/op
+BenchmarkCache_StringString_SingleThread
+BenchmarkCache_StringString_SingleThread/Put
+BenchmarkCache_StringString_SingleThread/Put-16                   586318              2015 ns/op             209 B/op          9 allocs/op
+BenchmarkCache_StringString_SingleThread/Get
+BenchmarkCache_StringString_SingleThread/Get-16                   860658              1434 ns/op              87 B/op          6 allocs/op
+BenchmarkCache_StringString_ParallelPut
+BenchmarkCache_StringString_ParallelPut-16                       5286390               227.2 ns/op           209 B/op          9 allocs/op
+BenchmarkCache_StringString_ParallelGet
+BenchmarkCache_StringString_ParallelGet-16                       6639519               162.4 ns/op            88 B/op          6 allocs/op
+PASS
+ok      github.com/alistanis/cache      10.423s
+PASS
+ok      github.com/alistanis/cache/list 0.111s
+
+```
+
+### Linux, Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+```
+go test -v -benchmem ./... -bench . -run=bench
+goos: linux
+goarch: amd64
+pkg: github.com/alistanis/cache
+cpu: Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+BenchmarkCache_IntInt_SingleThread
+BenchmarkCache_IntInt_SingleThread/Put
+BenchmarkCache_IntInt_SingleThread/Put-12        1000000              1062 ns/op             110 B/op          6 allocs/op
+BenchmarkCache_IntInt_SingleThread/Get
+BenchmarkCache_IntInt_SingleThread/Get-12        1349502               886.8 ns/op            47 B/op          4 allocs/op
+BenchmarkCache_IntInt_ParallelPut
+BenchmarkCache_IntInt_ParallelPut-12             6455076               197.1 ns/op           110 B/op          6 allocs/op
+BenchmarkCache_IntInt_ParallelGet
+BenchmarkCache_IntInt_ParallelGet-12             6827888               168.3 ns/op            48 B/op          5 allocs/op
+BenchmarkCache_StringString_SingleThread
+BenchmarkCache_StringString_SingleThread/Put
+BenchmarkCache_StringString_SingleThread/Put-12                   842470              1446 ns/op             209 B/op          9 allocs/op
+BenchmarkCache_StringString_SingleThread/Get
+BenchmarkCache_StringString_SingleThread/Get-12                  1000000              1075 ns/op              87 B/op          6 allocs/op
+BenchmarkCache_StringString_ParallelPut
+BenchmarkCache_StringString_ParallelPut-12                       4743643               269.0 ns/op           209 B/op          9 allocs/op
+BenchmarkCache_StringString_ParallelGet
+BenchmarkCache_StringString_ParallelGet-12                       5551136               206.4 ns/op            88 B/op          6 allocs/op
+PASS
+ok      github.com/alistanis/cache      11.210s
+PASS
+ok      github.com/alistanis/cache/list 0.002s
+```
+
