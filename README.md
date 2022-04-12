@@ -126,6 +126,7 @@ func main() {
 
 # Benchmarks
 
+### MacBook Air (M1, 2020), 16GB Ram
 ```
 go test -v -benchmem ./... -bench . -run=bench
 
