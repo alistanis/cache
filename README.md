@@ -57,6 +57,18 @@ type Cache[K comparable, V any] struct {
     caches []*cache[K, V]
 }
 ```
+The Cache is the main interface into the underlying caches.
+This is the object you want to use if you have many objects
+being accessed or mutated across different goroutines. It splits
+any contention across LRU partitions and Go channels instead of using
+Mutexes for consistency. The underlying client for each cache is exposed for any
+fine-tuning that must be done; if your workflow ends up pinning a few
+objects to one particular LRU just because of how the hashing works out and some LRUs are full
+but never being evicted, you can manually do so for caches that are being underutilized.
+You can also resize them; manually adding elements to them is not recommended if the top level Cache interface is still being used.
+
+### Note
+All structures in this package are optimized for alignment.
 
 # examples
 

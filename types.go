@@ -28,8 +28,10 @@ type metaResponse struct {
 	Cap int
 }
 
+// MetaResponse is a slice of metaResponse
 type MetaResponse []metaResponse
 
+// Len returns the aggregate length of all metaResponses (number of items in cache)
 func (m MetaResponse) Len() (length int) {
 	for _, mr := range m {
 		length += mr.Len
@@ -37,6 +39,7 @@ func (m MetaResponse) Len() (length int) {
 	return
 }
 
+// Cap returns the total capacity of all metaResponses (total cache capacity)
 func (m MetaResponse) Cap() (capacity int) {
 	for _, mr := range m {
 		capacity += mr.Cap
