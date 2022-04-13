@@ -47,7 +47,8 @@ type Cache[K comparable, V any] struct {
 }
 
 // New initializes and returns a Cache object. Each internal lruCache runs its own goroutine, the number of which is
-// determined by the 'concurrency' parameter
+// determined by the 'concurrency' parameter. The total number of elements that can be placed in the Cache at any time is
+// `capacityPerPartition * concurrency`
 func New[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int) *Cache[K, V] {
 	return WithEvictionFunction[K, V](ctx, capacityPerPartition, concurrency, nil)
 }
@@ -109,6 +110,7 @@ func (g *Cache[K, V]) Meta() (data MetaResponse) {
 	return
 }
 
+// Resize resizes all *lruCaches to the given size
 func (g *Cache[K, V]) Resize(i int) int {
 	evicted := 0
 	for _, c := range g.caches {
