@@ -1,4 +1,5 @@
 # cache
+![Coverage](https://img.shields.io/badge/Coverage-100.0%25-brightgreen)
 
 Cache is a thread safe and lockless in memory cache object. This is achieved by partitioning values across many
 smaller LRU (least recently used) caches and interacting with those caches over channels. 
