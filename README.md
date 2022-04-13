@@ -1,7 +1,7 @@
 # cache
 ![Coverage](https://img.shields.io/badge/Coverage-100.0%25-brightgreen)
 
-Cache is a thread safe, generic, and lockless in memory LRU cache object. This is achieved by partitioning values across
+Cache is a thread safe, generic, and sharded in memory LRU cache object. This is achieved by partitioning values across
 many
 smaller LRU (least recently used) caches and interacting with those caches over channels.
 Each smaller cache maintains access to its own elements and communicates information back to the Cache object,
@@ -216,7 +216,7 @@ func main() {
 	// size of 1 in order to demonstrate eviction
 	// Type of cache elements can be inferred by the arguments to the eviction function
 	c := cache.WithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
-		st, err := f.Stat()
+		_, err := f.Stat()
 		if err != nil {
 			errC <- err
 			return
