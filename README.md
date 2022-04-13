@@ -72,6 +72,8 @@ All structures in this package are optimized for alignment.
 
 # examples
 
+For additional examples, see `cache_test.go` and `cache_benchmark_test.go`
+
 ### Single Cache Partition
 
 ```go
@@ -213,7 +215,7 @@ func main() {
 	// concurrency/partition of 1 to guarantee LRU order
 	// size of 1 in order to demonstrate eviction
 	// Type of cache elements can be inferred by the arguments to the eviction function
-	c := cache.NewWithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
+	c := cache.WithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
 		st, err := f.Stat()
 		if err != nil {
 			errC <- err

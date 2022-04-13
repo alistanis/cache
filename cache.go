@@ -49,10 +49,12 @@ type Cache[K comparable, V any] struct {
 // New initializes and returns a Cache object. Each internal lruCache runs its own goroutine, the number of which is
 // determined by the 'concurrency' parameter
 func New[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int) *Cache[K, V] {
-	return NewWithEvictionFunction[K, V](ctx, capacityPerPartition, concurrency, nil)
+	return WithEvictionFunction[K, V](ctx, capacityPerPartition, concurrency, nil)
 }
 
-func NewWithEvictionFunction[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int, fn func(k K, v V)) *Cache[K, V] {
+// WithEvictionFunction returns a new *Cache that will call an eviction function on every *list.Node when it is evicted from
+// its *cache
+func WithEvictionFunction[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int, fn func(k K, v V)) *Cache[K, V] {
 	g := &Cache[K, V]{caches: make([]*lruCache[K, V], 0, concurrency)}
 	for i := 0; i < concurrency; i++ {
 		c := newLruCacheWithEvictionFunction[K, V](capacityPerPartition, fn)

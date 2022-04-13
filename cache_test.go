@@ -378,7 +378,7 @@ func TestCache_EvictionFunction(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	errC := make(chan error)
 
-	c := NewWithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
+	c := WithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
 		st, err := f.Stat()
 		if err != nil {
 			errC <- err
