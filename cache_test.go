@@ -58,8 +58,8 @@ func Example() {
 	c := New[int, int](ctx, 6, concurrency)
 	defer c.Wait()
 
-	fmt.Println(c.Meta().Len)
-	fmt.Println(c.Meta().Cap)
+	fmt.Println(c.Meta().Len())
+	fmt.Println(c.Meta().Cap())
 	finished := make(chan struct{})
 	go func() {
 		for i := 0; i < 4*concurrency; i++ {
@@ -93,9 +93,9 @@ func Example() {
 
 	}
 
-	// we've put enough values into the cache that 10 partitions are filled with 6 elements each
-	fmt.Println(c.Meta().Len)
-	fmt.Println(c.Meta().Cap)
+	// we've put enough values into the lruCache that 10 partitions are filled with 6 elements each
+	fmt.Println(c.Meta().Len())
+	fmt.Println(c.Meta().Cap())
 	// Output:
 	// 0
 	// 60
@@ -104,11 +104,11 @@ func Example() {
 	cancel()
 }
 
-func Test_cache(t *testing.T) {
+func Test_lruCache(t *testing.T) {
 
 	Assert := assert.New(t)
 
-	c := newCache[int, string](4)
+	c := newLruCache[int, string](4)
 	c.Put(42, "42")
 
 	Assert.EqualValues(c.Size(), 1)
@@ -202,9 +202,9 @@ type sPair struct {
 func Test_cache_Serve(t *testing.T) {
 	Assert := assert.New(t)
 
-	ca := newCache[string, string](5)
+	ca := newLruCache[string, string](5)
 	ctx, cancel := context.WithCancel(context.Background())
-	c := ca.Serve(ctx)
+	c := ca.serve(ctx)
 	defer c.Wait()
 	pairs := []sPair{
 		{"Hello", "Goodbye"},
@@ -248,8 +248,8 @@ func TestCache(t *testing.T) {
 	}
 
 	met := c.Meta()
-	Assert.EqualValues(capacity*runtime.NumCPU(), met.Cap)
-	Assert.EqualValues(capacity*runtime.NumCPU(), met.Len)
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Cap())
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Len())
 
 	c.Put(1, 1)
 
@@ -295,8 +295,8 @@ func TestCache_String(t *testing.T) {
 	}
 
 	met := c.Meta()
-	Assert.EqualValues(capacity*runtime.NumCPU(), met.Cap)
-	Assert.EqualValues(capacity*runtime.NumCPU(), met.Len)
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Cap())
+	Assert.EqualValues(capacity*runtime.NumCPU(), met.Len())
 
 	v, found := c.Get(string(b))
 	Assert.True(found)
@@ -313,7 +313,7 @@ func TestCache_Concurrently(t *testing.T) {
 	c := New[int, int](ctx, capacity, runtime.NumCPU())
 	defer c.Wait()
 
-	for i := 0; c.Meta().Len != capacity*runtime.NumCPU(); i++ {
+	for i := 0; c.Meta().Len() != capacity*runtime.NumCPU(); i++ {
 		c.Put(i, i)
 	}
 
@@ -367,7 +367,7 @@ func TestCache_Concurrently(t *testing.T) {
 	cancel2()
 	<-getWait
 
-	Assert.EqualValues(capacity*runtime.NumCPU(), c.Meta().Len)
+	Assert.EqualValues(capacity*runtime.NumCPU(), c.Meta().Len())
 
 	cancel1()
 }
@@ -444,4 +444,60 @@ func TestCache_EvictionFunction(t *testing.T) {
 
 	close(errC)
 	<-exit
+}
+
+func TestCache_Client(t *testing.T) {
+	Assert := assert.New(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	capacity := 5
+	concurrency := 1
+	ca := New[int, int](ctx, capacity, concurrency)
+
+	defer ca.Wait()
+	defer cancel()
+
+	c := ca.Client(0)
+
+	Assert.EqualValues(5, c.Meta().Cap)
+
+	c.Put(1, 1)
+	c.Put(2, 2)
+	c.Put(42, 42)
+	c.Put(3, 3)
+	c.Get(42)
+	c.Put(314, 314)
+
+	vals := []int{314, 42, 3, 2, 1}
+
+	Assert.EqualValues(5, c.Meta().Len)
+	i := 0
+	c.Each(func(k, v int) {
+		Assert.EqualValues(vals[i], v)
+		i++
+	})
+
+	evicted := c.EvictTo(0)
+	Assert.EqualValues(5, evicted)
+	Assert.EqualValues(0, c.Meta().Len)
+	Assert.EqualValues(5, c.Meta().Cap)
+
+	c.Put(1, 1)
+	c.Put(2, 2)
+	c.Put(42, 42)
+	c.Put(3, 3)
+	c.Get(42)
+	c.Put(314, 314)
+
+	evicted = c.Resize(2)
+	Assert.EqualValues(3, evicted)
+	Assert.EqualValues(2, c.Meta().Len)
+	Assert.EqualValues(2, c.Meta().Cap)
+
+	vals = []int{314, 42}
+	i = 0
+	c.Each(func(k, v int) {
+		Assert.EqualValues(vals[i], v)
+		i++
+	})
 }

@@ -1,10 +1,62 @@
 # cache
 ![Coverage](https://img.shields.io/badge/Coverage-100.0%25-brightgreen)
 
-Cache is a thread safe and lockless in memory cache object. This is achieved by partitioning values across many
-smaller LRU (least recently used) caches and interacting with those caches over channels. 
-Each smaller cache maintains access to its own elements and communicates information back to the Cache object, 
+Cache is a thread safe, generic, and lockless in memory LRU cache object. This is achieved by partitioning values across
+many
+smaller LRU (least recently used) caches and interacting with those caches over channels.
+Each smaller cache maintains access to its own elements and communicates information back to the Cache object,
 which then responds back to the original caller.
+
+# behavior
+
+### LRU backing caches
+
+```go
+type lruCache[K comparable, V any] struct {
+table map[K]*list.Node[KVPair[K, V]]
+list  *list.List[KVPair[K, V]]
+...
+client  *client[K, V]
+evictFn func (k K, v V)
+}
+```
+
+The LRU backing caches behaves exactly like a normal LRU and are composed of a doubly linked list and a map to allow key
+lookups.
+When an entry is added or accessed it is pushed to the front of the list, and when enough items are added to the cache
+the oldest
+items(the back of the list) are evicted to make room for more recently used entries. The list implementation itself is a
+ported
+version from the go stdlib which uses type parameters instead of runtime interfaces and can be found in the `/list`
+directory.
+
+Each `*lruCache` spawns a single goroutine when `*lruCache.serve(ctx)` is called.
+
+### client
+
+```go
+type client[K comparable, V any] struct {
+// GetChannel is a channel for retrieving values from the cache for which this client is associated
+GetChannel *RequestChannel[Request[K], GetResponse[K, V]]
+// PutChannel is a channel for placing values into the cache for which this client is associated
+PutChannel *RequestChannel[Request[KVPair[K, V]], struct{}]
+...
+}
+```
+
+The client abstraction contains a collection of channels by which it communicates with `*lruCache` objects. This allows
+each
+`*lruCache` to run a single goroutine on which it listens for requests over these channels, processes them, and sends
+responses
+without the need for locking anything.
+
+### Cache
+
+```go
+type Cache[K comparable, V any] struct {
+caches []*cache[K, V]
+}
+```
 
 # examples
 
@@ -48,9 +100,9 @@ func main() {
 	// Output:
 	// 4
 	// 42
-    // 3
-    // 2
-    // 0
+	// 3
+	// 2
+	// 0
 }
 ```
 
@@ -77,8 +129,8 @@ func main() {
 	c := cache.New[int, int](ctx, 6, concurrency)
 	defer c.Wait()
 
-	fmt.Println(c.Meta().Len)
-	fmt.Println(c.Meta().Cap)
+	fmt.Println(c.Meta().Len())
+	fmt.Println(c.Meta().Cap())
 	finished := make(chan struct{})
 	go func() {
 		for i := 0; i < 4*concurrency; i++ {
@@ -115,8 +167,8 @@ func main() {
 	}
 
 	// we've put enough values into the cache that 10 partitions are filled with 6 elements each
-	fmt.Println(c.Meta().Len)
-	fmt.Println(c.Meta().Cap)
+	fmt.Println(c.Meta().Len())
+	fmt.Println(c.Meta().Cap())
 	// Output:
 	// 0
 	// 60
