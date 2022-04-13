@@ -23,19 +23,24 @@ type cache[K comparable, V any] struct {
 	table map[K]*list.Node[KVPair[K, V]]
 	list  *list.List[KVPair[K, V]]
 
-	// GetRequest is a request channel parameterized for getting values from the cache
-	GetRequest *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
-	// PutRequest is a request channel parameterized for putting values into the cache
-	PutRequest *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
-	// RemoveRequest is a request channel parameterized for removing values from the cache
-	RemoveRequest *RequestChannel[Request[K, bool], bool]
+	// GetChannel is a request channel parameterized for getting values from the cache
+	GetChannel *RequestChannel[Request[K], GetResponse[K, V]]
+	// PutChannel is a channel parameterized for putting values into the cache
+	PutChannel *RequestChannel[Request[KVPair[K, V]], struct{}]
+	// RemoveChannel is a channel parameterized for removing values from the cache
+	RemoveChannel *RequestChannel[Request[K], bool]
+	// EachChannel is a channel parameterized for running a function on each object in this cache
+	EachChannel *RequestChannel[Request[FnWrap[K, V]], struct{}]
+	// MetaChannel is a channel parameterized for retrieving metadata about this cache
+	MetaChannel *RequestChannel[Request[struct{}], MetaResponse]
+	// ResizeChannel is a channel parameterized for resizing this cache
+	ResizeChannel *RequestChannel[Request[int], int]
+	// EvictionChannel is a channel parameterized for evicting this cache
+	EvictionChannel *RequestChannel[Request[int], int]
+	evictFn         func(k K, v V)
 
-	// EachRequest is a request channel parameterized for running a function on each object in this cache
-	EachRequest *RequestChannel[Request[func(K, V), struct{}], struct{}]
-	// MetaRequest is a request channel parameterized for retrieving metadata about this cache
-	MetaRequest *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
-	size        int
-	capacity    int
+	size     int
+	capacity int
 }
 
 // MetaResponse is a structure for returning metadata responses, in this case, just the Length and Capacity of the
@@ -58,10 +63,13 @@ type Cache[K comparable, V any] struct {
 // New initializes and returns a Cache object. Each internal cache runs its own goroutine, the number of which is
 // determined by the 'concurrency' parameter
 func New[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int) *Cache[K, V] {
+	return NewWithEvictionFunction[K, V](ctx, capacityPerPartition, concurrency, nil)
+}
 
+func NewWithEvictionFunction[K comparable, V any](ctx context.Context, capacityPerPartition, concurrency int, fn func(k K, v V)) *Cache[K, V] {
 	g := &Cache[K, V]{caches: make([]*cache[K, V], 0, concurrency), clients: make([]*Client[K, V], 0, concurrency)}
 	for i := 0; i < concurrency; i++ {
-		g.caches = append(g.caches, newCache[K, V](capacityPerPartition))
+		g.caches = append(g.caches, newCacheWithEvictionFunction[K, V](capacityPerPartition, fn))
 	}
 	for _, c := range g.caches {
 		g.clients = append(g.clients, c.Serve(ctx))
@@ -115,6 +123,28 @@ func (g *Cache[K, V]) Meta() (data MetaResponse) {
 	return
 }
 
+func (g *Cache[K, V]) Resize(i int) int {
+	evicted := 0
+	for _, c := range g.clients {
+		evicted += c.Resize(i)
+	}
+	return evicted
+}
+
+// Evict the entire cache
+func (g *Cache[K, V]) Evict() int {
+	return g.EvictTo(0)
+}
+
+// EvictTo down to i per cache
+func (g *Cache[K, V]) EvictTo(i int) int {
+	evicted := 0
+	for _, c := range g.clients {
+		evicted += c.EvictTo(i)
+	}
+	return evicted
+}
+
 // Wait waits to close all clients and channels associated with this cache
 func (g *Cache[K, V]) Wait() {
 	for _, c := range g.clients {
@@ -124,20 +154,25 @@ func (g *Cache[K, V]) Wait() {
 
 // newCache returns a new cache with the given capacity.
 func newCache[K comparable, V any](capacity int) *cache[K, V] {
+	return newCacheWithEvictionFunction[K, V](capacity, nil)
+}
 
-	c := &cache[K, V]{
-		table:         make(map[K]*list.Node[KVPair[K, V]]),
-		list:          list.New[KVPair[K, V]](),
-		size:          0,
-		capacity:      capacity,
-		GetRequest:    NewRequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]](),
-		PutRequest:    NewRequestChannel[Request[KVPair[K, V], struct{}], struct{}](),
-		RemoveRequest: NewRequestChannel[Request[K, bool], bool](),
-		EachRequest:   NewRequestChannel[Request[func(K, V), struct{}], struct{}](),
-		MetaRequest:   NewRequestChannel[Request[struct{}, MetaResponse], MetaResponse](),
+func newCacheWithEvictionFunction[K comparable, V any](capacity int, fn func(k K, v V)) *cache[K, V] {
+
+	return &cache[K, V]{
+		table:           make(map[K]*list.Node[KVPair[K, V]]),
+		list:            list.New[KVPair[K, V]](),
+		size:            0,
+		capacity:        capacity,
+		GetChannel:      NewRequestChannel[Request[K], GetResponse[K, V]](),
+		PutChannel:      NewRequestChannel[Request[KVPair[K, V]], struct{}](),
+		RemoveChannel:   NewRequestChannel[Request[K], bool](),
+		EachChannel:     NewRequestChannel[Request[FnWrap[K, V]], struct{}](),
+		MetaChannel:     NewRequestChannel[Request[struct{}], MetaResponse](),
+		ResizeChannel:   NewRequestChannel[Request[int], int](),
+		EvictionChannel: NewRequestChannel[Request[int], int](),
+		evictFn:         fn,
 	}
-
-	return c
 }
 
 // Get returns the value associated with a given key, and a boolean indicating
@@ -176,14 +211,16 @@ func (c *cache[K, V]) evict() {
 		return
 	}
 	kv := e.Value
-
+	if c.evictFn != nil {
+		c.evictFn(kv.Key, kv.Val)
+	}
 	c.list.Remove(e)
 	c.size--
 	delete(c.table, kv.Key)
 }
 
 // Remove causes the kv pair associated with the given key to be immediately
-// evicted from the cache.
+// removed from the cache.
 func (c *cache[K, V]) Remove(k K) bool {
 	var ok bool
 	var n *list.Node[KVPair[K, V]]
@@ -195,25 +232,38 @@ func (c *cache[K, V]) Remove(k K) bool {
 	return ok
 }
 
+func (c *cache[K, V]) EvictTo(size int) int {
+	if size < 0 || c.size <= size {
+		return 0
+	}
+	evicted := c.size - size
+	for i := c.size; i > size; i-- {
+		c.evict()
+	}
+	return evicted
+}
+
 // Resize changes the maximum capacity for this cache to 'size'.
-func (c *cache[K, V]) Resize(size int) {
+func (c *cache[K, V]) Resize(size int) int {
 	if c.capacity == size {
-		return
+		return 0
 	} else if c.capacity < size {
 		c.capacity = size
-		return
+		return 0
 	}
 
 	if c.size == size {
 		c.capacity = size
-		return
+		return 0
 	}
 
+	evicted := c.capacity - size
 	for i := 0; i < c.capacity-size; i++ {
 		c.evict()
 	}
 
 	c.capacity = size
+	return evicted
 }
 
 // Size returns the number of active elements in the cache.
@@ -235,32 +285,32 @@ func (c *cache[K, V]) Each(fn func(K, V)) {
 	}
 }
 
-// Request is a request object sent over a channel. The Response type is used to create a Response chan.
-type Request[T any, Response any] struct {
-	// ResponseChannel is a generic channel that can send and receive objects parameterized as a Response
-	ResponseChannel chan Response
+// Request is a request object sent over a request. The Response type is used to create a Response chan.
+type Request[T any] struct {
 	// RequestBody is the value of the request key
 	RequestBody T
 }
 
 // NewRequest creates a new Request
-func NewRequest[T any, Response any](request T, responseChannel chan Response) *Request[T, Response] {
-	return &Request[T, Response]{responseChannel, request}
+func NewRequest[T any](request T) *Request[T] {
+	return &Request[T]{request}
 }
 
-// RequestChannel is a struct wrapper around a generic request channel type
+// RequestChannel is a struct wrapper around a generic request request type
 type RequestChannel[Request any, Response any] struct {
-	channel chan *Request
+	request  chan *Request
+	response chan Response
 }
 
 // NewRequestChannel returns a new RequestChannel wrapper for Request and Response over channels
 func NewRequestChannel[Request any, Response any]() *RequestChannel[Request, Response] {
-	return &RequestChannel[Request, Response]{channel: make(chan *Request)}
+	return &RequestChannel[Request, Response]{request: make(chan *Request), response: make(chan Response)}
 }
 
-// Close shuts the RequestChannel channel down
+// Close shuts the RequestChannel request down
 func (r RequestChannel[Request, Response]) Close() {
-	close(r.channel)
+	close(r.request)
+	close(r.response)
 }
 
 // GetResponse is a struct wrapper for a Cache Get response
@@ -269,89 +319,119 @@ type GetResponse[K comparable, V any] struct {
 	Found bool
 }
 
+// FnWrap is a wrapper function for passing a generic function over a channel. On at least 1.18.1, sending
+// a function over a channel with a non-primitive pointer type seems to implicitly convert the pointer type
+// to *uint8 and causes compilation to fail.
+type FnWrap[K comparable, V any] struct {
+	fn func(k K, v V)
+}
+
 // Client is a structure responsible for talking to cache objects
 type Client[K comparable, V any] struct {
-	// GetRequest is a request channel for retrieving values from the cache for which this client is associated
-	GetRequest *RequestChannel[Request[K, GetResponse[K, V]], GetResponse[K, V]]
-	// GetResponseChannel is a channel for receiving GetRequest responses
-	GetResponseChannel chan GetResponse[K, V]
 
-	// PutRequest is a request channel for placing values into the cache for which this client is associated
-	PutRequest *RequestChannel[Request[KVPair[K, V], struct{}], struct{}]
-	// PutResponseChannel is a channel for receiving acknowledgment that a Put request has finished
-	PutResponseChannel chan struct{}
+	// GetChannel is a channel for retrieving values from the cache for which this client is associated
+	GetChannel *RequestChannel[Request[K], GetResponse[K, V]]
 
-	// RemoveRequest is a request channel for removing values from the cache for which this client is associated
-	RemoveRequest *RequestChannel[Request[K, bool], bool]
-	// RemoveResponseChannel is a channel for receiving acknowledgment that a Remove request has finished and whether anything was removed
-	RemoveResponseChannel chan bool
+	// PutChannel is a channel for placing values into the cache for which this client is associated
+	PutChannel *RequestChannel[Request[KVPair[K, V]], struct{}]
 
-	// EachRequest is a request channel for running functions on each element in the cache for which this client is associated
-	EachRequest *RequestChannel[Request[func(K, V), struct{}], struct{}]
-	// EachResponseChannel is a channel for receiving acknowledgment that all items in this cache have been processed
-	EachResponseChannel chan struct{}
+	// RemoveChannel is a channel for removing values from the cache for which this client is associated
+	RemoveChannel *RequestChannel[Request[K], bool]
 
-	// MetaRequest is a request channel for requesting metadata about ths cache for which this client is associated
-	MetaRequest *RequestChannel[Request[struct{}, MetaResponse], MetaResponse]
-	// MetaDataResponseChannel is a channel for receiving meta data about the cache for which this client is associated
-	MetaDataResponseChannel chan MetaResponse
+	// EachChannel is a channel for running functions on each element in the cache for which this client is associated
+	EachChannel *RequestChannel[Request[FnWrap[K, V]], struct{}]
+
+	// MetaChannel is a channel for requesting metadata about ths cache for which this client is associated
+	MetaChannel *RequestChannel[Request[struct{}], MetaResponse]
+
+	// ResizeChannel is a channel for resizing the cache
+	ResizeChannel *RequestChannel[Request[int], int]
+
+	// EvictionChannel is a channel for evicting the cache
+	EvictionChannel *RequestChannel[Request[int], int]
 
 	finished chan struct{}
 }
 
 // Get gets an object associated with key k
 func (c *Client[K, V]) Get(k K) GetResponse[K, V] {
-	c.GetRequest.channel <- NewRequest[K, GetResponse[K, V]](k, c.GetResponseChannel)
-	return <-c.GetResponseChannel
+	c.GetChannel.request <- NewRequest[K](k)
+	return <-c.GetChannel.response
 }
 
 // Put puts an object with key k and value v
 func (c *Client[K, V]) Put(k K, v V) {
 	pair := KVPair[K, V]{k, v}
-	req := NewRequest[KVPair[K, V], struct{}](pair, c.PutResponseChannel)
+	req := NewRequest[KVPair[K, V]](pair)
 
-	c.PutRequest.channel <- req
-	<-c.PutResponseChannel
+	c.PutChannel.request <- req
+	<-c.PutChannel.response
 }
 
 // Remove deletes a value associated with key k
 func (c *Client[K, V]) Remove(k K) bool {
-	c.RemoveRequest.channel <- NewRequest[K, bool](k, c.RemoveResponseChannel)
-	return <-c.RemoveResponseChannel
+	c.RemoveChannel.request <- NewRequest[K](k)
+	return <-c.RemoveChannel.response
 }
 
 // Each runs the function fn on each value associated with this client's cache
 func (c *Client[K, V]) Each(fn func(k K, v V)) {
-	c.EachRequest.channel <- NewRequest[func(K, V), struct{}](fn, c.EachResponseChannel)
-	<-c.EachResponseChannel
+	c.EachChannel.request <- NewRequest[FnWrap[K, V]](FnWrap[K, V]{fn})
+	<-c.EachChannel.response
 }
 
 // Meta returns metadata about this client's cache
 func (c *Client[K, V]) Meta() (data MetaResponse) {
-	c.MetaRequest.channel <- NewRequest[struct{}, MetaResponse](struct{}{}, c.MetaDataResponseChannel)
-	return <-c.MetaDataResponseChannel
+	c.MetaChannel.request <- NewRequest[struct{}](struct{}{})
+	return <-c.MetaChannel.response
+}
+
+// Resize resizes this client's cache to i
+func (c *Client[K, V]) Resize(i int) int {
+	c.ResizeChannel.request <- NewRequest[int](i)
+	return <-c.ResizeChannel.response
+}
+
+// EvictTo evicts this client's cache until it has reached size i
+func (c *Client[K, V]) EvictTo(i int) int {
+	c.EvictionChannel.request <- NewRequest[int](i)
+	return <-c.EvictionChannel.response
 }
 
 // Wait waits until all work is finished for this client and closes all communication channels
 func (c *Client[K, V]) Wait() {
 
 	<-c.finished
-	c.GetRequest.Close()
-	c.PutRequest.Close()
-	c.EachRequest.Close()
-	c.RemoveRequest.Close()
-	c.MetaRequest.Close()
+	c.GetChannel.Close()
+	c.PutChannel.Close()
+	c.EachChannel.Close()
+	c.RemoveChannel.Close()
+	c.MetaChannel.Close()
+	c.EvictionChannel.Close()
+	c.ResizeChannel.Close()
 }
 
 // NewClient returns a new client initialized for work
 func (c *cache[K, V]) NewClient() *Client[K, V] {
 	return &Client[K, V]{
-		c.GetRequest, make(chan GetResponse[K, V]),
-		c.PutRequest, make(chan struct{}),
-		c.RemoveRequest, make(chan bool),
-		c.EachRequest, make(chan struct{}),
-		c.MetaRequest, make(chan MetaResponse),
-		make(chan struct{})}
+		c.GetChannel,
+		c.PutChannel,
+		c.RemoveChannel,
+		c.EachChannel,
+		c.MetaChannel,
+		c.ResizeChannel,
+		c.EvictionChannel,
+		make(chan struct{}),
+	}
+}
+
+func (c *cache[K, V]) handleGetRequest(r *Request[K]) {
+	v, found := c.Get(r.RequestBody)
+	if found {
+		c.GetChannel.response <- GetResponse[K, V]{KVPair: KVPair[K, V]{Key: r.RequestBody, Val: v}, Found: true}
+	} else {
+		c.GetChannel.response <- GetResponse[K, V]{KVPair: KVPair[K, V]{}, Found: false}
+	}
 }
 
 // Serve returns a new client and starts a goroutine responsible for handling all IO for this cache
@@ -365,26 +445,30 @@ func (c *cache[K, V]) Serve(ctx context.Context) (client *Client[K, V]) {
 			case <-ctx.Done():
 				client.finished <- struct{}{}
 				return
-			case k := <-c.GetRequest.channel:
-				v, found := c.Get(k.RequestBody)
-				if found {
-					k.ResponseChannel <- GetResponse[K, V]{KVPair: KVPair[K, V]{Key: k.RequestBody, Val: v}, Found: true}
-				} else {
-					k.ResponseChannel <- GetResponse[K, V]{KVPair: KVPair[K, V]{}, Found: false}
-				}
-			case kv := <-c.PutRequest.channel:
+
+			case gr := <-c.GetChannel.request:
+				c.handleGetRequest(gr)
+
+			case kv := <-c.PutChannel.request:
 				c.Put(kv.RequestBody.Key, kv.RequestBody.Val)
-				kv.ResponseChannel <- struct{}{}
+				c.PutChannel.response <- struct{}{}
 
-			case k := <-c.RemoveRequest.channel:
-				k.ResponseChannel <- c.Remove(k.RequestBody)
+			case k := <-c.RemoveChannel.request:
+				c.RemoveChannel.response <- c.Remove(k.RequestBody)
 
-			case e := <-c.EachRequest.channel:
-				c.Each(e.RequestBody)
-				e.ResponseChannel <- struct{}{}
+			case e := <-c.EachChannel.request:
+				c.Each(e.RequestBody.fn)
+				c.EachChannel.response <- struct{}{}
 
-			case v := <-c.MetaRequest.channel:
-				v.ResponseChannel <- MetaResponse{Len: c.Size(), Cap: c.Capacity()}
+			case <-c.MetaChannel.request:
+				c.MetaChannel.response <- MetaResponse{Len: c.Size(), Cap: c.Capacity()}
+
+			case r := <-c.ResizeChannel.request:
+				c.ResizeChannel.response <- c.Resize(r.RequestBody)
+
+			case i := <-c.EvictionChannel.request:
+				c.EvictionChannel.response <- c.EvictTo(i.RequestBody)
+
 			}
 
 		}

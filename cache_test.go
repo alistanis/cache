@@ -3,20 +3,26 @@ package cache
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"log"
 	"math/rand"
+	"os"
 	"runtime"
+	"syscall"
 	"testing"
 	"time"
-
-	"github.com/stretchr/testify/assert"
 )
 
 // Example_singleCache is a simple example that is shown with a concurrency of 1 in order to illustrate how the smaller LRU
 // caches work.
 func Example_singleCache() {
 	ctx, cancel := context.WithCancel(context.Background())
+	capacityPerPartition := 5
+	// this determines how many LRU backing
+	// caches are used and how many caches can be accessed concurrently
+	numberOfCaches := 1
 
-	c := New[int, int](ctx, 5, 1)
+	c := New[int, int](ctx, capacityPerPartition, numberOfCaches)
 	defer c.Wait()
 
 	c.Put(42, 42)
@@ -364,4 +370,76 @@ func TestCache_Concurrently(t *testing.T) {
 	Assert.EqualValues(capacity*runtime.NumCPU(), c.Meta().Len)
 
 	cancel1()
+}
+
+func TestCache_EvictionFunction(t *testing.T) {
+	Assert := assert.New(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errC := make(chan error)
+
+	c := NewWithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
+		st, err := f.Stat()
+		if err != nil {
+			errC <- err
+			return
+		}
+		// type assertion will fail on other platforms
+		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+			log.Printf("Closing file at path %s, fd: %d, inode: %d", s, f.Fd(), st.Sys().(*syscall.Stat_t).Ino)
+		}
+		errC <- f.Close()
+	})
+
+	defer c.Wait()
+	defer cancel()
+
+	d, err := os.MkdirTemp("", "")
+	Assert.Nil(err)
+	defer func(path string) {
+		err := os.RemoveAll(path)
+		Assert.Nil(err)
+
+	}(d)
+
+	exit := make(chan struct{})
+	go func() {
+		for e := range errC {
+			if e != nil {
+				t.Error(e)
+			}
+		}
+		exit <- struct{}{}
+	}()
+
+	f, err := os.CreateTemp(d, "")
+	if err != nil {
+		t.Error(err)
+	}
+
+	c.Put(f.Name(), f)
+
+	f2, err := os.CreateTemp(d, "")
+	if err != nil {
+		t.Error(err)
+	}
+
+	// evict f and cause the eviction function to fire, closing the file
+	c.Put(f2.Name(), f2)
+
+	// now evict f2
+	evicted := c.Evict()
+	Assert.EqualValues(1, evicted)
+	Assert.Zero(c.Evict())
+
+	f, err = os.CreateTemp(d, "")
+	if err != nil {
+		t.Error(err)
+	}
+
+	c.Put(f.Name(), f)
+	Assert.EqualValues(1, c.Resize(0))
+
+	close(errC)
+	<-exit
 }

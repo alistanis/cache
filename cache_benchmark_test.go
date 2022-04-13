@@ -22,7 +22,12 @@ func BenchmarkCache_IntInt_SingleThread(b *testing.B) {
 
 	b.Run("Get", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			c.Get(i)
+			v, found := c.Get(i)
+			if found {
+				if v != i {
+					b.Fatal("uh oh")
+				}
+			}
 		}
 	})
 
@@ -56,7 +61,12 @@ func BenchmarkCache_IntInt_ParallelGet(b *testing.B) {
 
 		i := 0
 		for pb.Next() {
-			c.Get(i)
+			v, found := c.Get(i)
+			if found {
+				if v != i {
+					b.Fatal("uh oh")
+				}
+			}
 			i++
 		}
 	})
@@ -81,7 +91,12 @@ func BenchmarkCache_StringString_SingleThread(b *testing.B) {
 
 	b.Run("Get", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			c.Get(indexToString(i))
+			v, found := c.Get(indexToString(i))
+			if found {
+				if v != indexToString(i) {
+					b.Fatal("uh oh")
+				}
+			}
 		}
 	})
 
@@ -115,7 +130,12 @@ func BenchmarkCache_StringString_ParallelGet(b *testing.B) {
 
 		i := 0
 		for pb.Next() {
-			c.Get(indexToString(i))
+			v, found := c.Get(indexToString(i))
+			if found {
+				if v != indexToString(i) {
+					b.Fatal("uh oh")
+				}
+			}
 			i++
 		}
 	})
