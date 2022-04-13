@@ -387,6 +387,8 @@ func TestCache_EvictionFunction(t *testing.T) {
 		// type assertion will fail on other platforms
 		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
 			log.Printf("Closing file at path %s, fd: %d, inode: %d", s, f.Fd(), st.Sys().(*syscall.Stat_t).Ino)
+		} else {
+			log.Printf("Closing file at path %s, fd: %d", s, f.Fd())
 		}
 		errC <- f.Close()
 	})

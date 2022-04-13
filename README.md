@@ -16,36 +16,37 @@ package main
 import (
 	"context"
 	"fmt"
-	
+
 	"github.com/alistanis/cache"
 )
 
-// Example_singleCache is a simple example that is shown with a concurrency of 1 in order to 
+// Simple example that is shown with a concurrency of 1 in order to 
 // illustrate how the smaller LRU caches work.
 func main() {
-    ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
+	concurrency := 1
+	lruCacheLimit := 5
+	c := cache.New[int, int](ctx, lruCacheLimit, concurrency)
+	defer c.Wait()
 
-    c := cache.New[int, int](ctx, 5, 1)
-    defer c.Wait()
+	c.Put(42, 42)
+	c.Put(1, 1)
+	c.Get(42)
+	c.Put(0, 0)
+	c.Put(2, 2)
+	c.Put(3, 3)
+	c.Get(42)
+	// evict 1
+	c.Put(4, 4)
 
-    c.Put(42, 42)
-    c.Put(1, 1)
-    c.Get(42)
-    c.Put(0, 0)
-    c.Put(2, 2)
-    c.Put(3, 3)
-    c.Get(42)
-    // evict 1
-    c.Put(4, 4)
+	c.Each(func(key int, val int) {
+		fmt.Println(key)
+	})
 
-    c.Each(func(key int, val int) {
-        fmt.Println(key)
-    })
-
-    cancel()
-    // Output:
-    // 4
-    // 42
+	cancel()
+	// Output:
+	// 4
+	// 42
     // 3
     // 2
     // 0
@@ -65,7 +66,7 @@ import (
 	"github.com/alistanis/cache"
 )
 
-// Example serves as a general example for using the Cache object. Since elements are spread across many partitions,
+// General example for using the Cache object. Since elements are spread across many partitions,
 // order can not be guaranteed, and items will not be evicted in pure LRU terms; it is possible that some partitions
 // may see more traffic than others and may be more eviction heavy, but generally, access patterns amortize evenly.
 func main() {
@@ -124,9 +125,122 @@ func main() {
 }
 ```
 
+### Cache With Eviction Function/Cleanup
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"runtime"
+	"syscall"
+
+	"github.com/alistanis/cache"
+)
+
+func main() {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	errC := make(chan error)
+
+	// concurrency/partition of 1 to guarantee LRU order
+	// size of 1 in order to demonstrate eviction
+	// Type of cache elements can be inferred by the arguments to the eviction function
+	c := cache.NewWithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
+		st, err := f.Stat()
+		if err != nil {
+			errC <- err
+			return
+		}
+		// type assertion will fail on other platforms
+		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+			log.Printf("Closing file at path %s, fd: %d, inode: %d", s, f.Fd(), st.Sys().(*syscall.Stat_t).Ino)
+		} else {
+			log.Printf("Closing file at path %s, fd: %d", s, f.Fd())
+		}
+		errC <- f.Close()
+	})
+
+	defer c.Wait()
+	defer cancel()
+
+	d, err := os.MkdirTemp("", "")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// cleanup temp resources after main exits
+	defer func(path string) {
+		err := os.RemoveAll(path)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	}(d)
+
+	// exit channel that will block until we're 
+	// finished collecting any/all errors
+	exit := make(chan struct{})
+	go func() {
+		for e := range errC {
+			if e != nil {
+				log.Println(e)
+			}
+		}
+		// signal that we're finished and can exit safely
+		exit <- struct{}{}
+	}()
+
+	f, err := os.CreateTemp(d, "")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// first entry on the LRU
+	c.Put(f.Name(), f)
+
+	f2, err := os.CreateTemp(d, "")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	// place f2 in the cache and evict f causing the eviction 
+	// function to fire, closing the file and logging
+	// 2022/04/13 07:31:47 Closing file at path /var/folders/q3/dt78p91s1b562lmq7qstllv00000gn/T/1705161844/1443821512, fd: 6, inode: 49662131
+
+	c.Put(f2.Name(), f2)
+
+	// now forcibly evict f2
+	evicted := c.Evict()
+
+	// 2022/04/13 07:31:47 Closing file at path /var/folders/q3/dt78p91s1b562lmq7qstllv00000gn/T/1705161844/767977656, fd: 7, inode: 49662130
+	log.Println(evicted) // 1
+
+	f, err = os.CreateTemp(d, "")
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	c.Put(f.Name(), f)
+	// Evict f again by resizing
+	log.Println(c.Resize(0)) // 1
+
+	// We're finished so we can close the error channel
+	close(errC)
+	// Wait until errors are processed and exit
+	<-exit
+}
+```
+
 # Benchmarks
 
 ### MacBook Air (M1, 2020), 16GB Ram
+
 ```
 go test -v -benchmem ./... -bench . -run=bench
 
