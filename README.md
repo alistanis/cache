@@ -13,15 +13,15 @@ which then responds back to the original caller.
 
 ```go
 type lruCache[K comparable, V any] struct {
-table map[K]*list.Node[KVPair[K, V]]
-list  *list.List[KVPair[K, V]]
-...
-client  *client[K, V]
-evictFn func (k K, v V)
+    table map[K]*list.Node[KVPair[K, V]]
+    list  *list.List[KVPair[K, V]]
+    ...
+    client  *client[K, V]
+    evictFn func (k K, v V)
 }
 ```
 
-The LRU backing caches behaves exactly like a normal LRU and are composed of a doubly linked list and a map to allow key
+The LRU backing caches behave exactly like a normal LRU and are composed of a doubly linked list and a map to allow key
 lookups.
 When an entry is added or accessed it is pushed to the front of the list, and when enough items are added to the cache
 the oldest
@@ -36,11 +36,11 @@ Each `*lruCache` spawns a single goroutine when `*lruCache.serve(ctx)` is called
 
 ```go
 type client[K comparable, V any] struct {
-// GetChannel is a channel for retrieving values from the cache for which this client is associated
-GetChannel *RequestChannel[Request[K], GetResponse[K, V]]
-// PutChannel is a channel for placing values into the cache for which this client is associated
-PutChannel *RequestChannel[Request[KVPair[K, V]], struct{}]
-...
+    // GetChannel is a channel for retrieving values from the cache for which this client is associated
+    GetChannel *RequestChannel[Request[K], GetResponse[K, V]]
+    // PutChannel is a channel for placing values into the cache for which this client is associated
+    PutChannel *RequestChannel[Request[KVPair[K, V]], struct{}]
+    ...
 }
 ```
 
@@ -54,7 +54,7 @@ without the need for locking anything.
 
 ```go
 type Cache[K comparable, V any] struct {
-caches []*cache[K, V]
+    caches []*cache[K, V]
 }
 ```
 
