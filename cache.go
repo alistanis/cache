@@ -10,6 +10,7 @@ import (
 	"context"
 	"github.com/alistanis/cache/list"
 	"github.com/mitchellh/hashstructure/v2"
+	"unsafe"
 )
 
 // lruCache is a generic LRU lruCache backed with a doubly linked list and a map
@@ -31,6 +32,9 @@ type lruCache[K comparable, V any] struct {
 	ResizeChannel *RequestChannel[Request[int], int]
 	// EvictionChannel is a channel parameterized for evicting this lruCache
 	EvictionChannel *RequestChannel[Request[int], int]
+
+	// MemoryChannel is a channel for reporting the amount of memory a lruCache is consuming
+	MemoryChannel *RequestChannel[Request[struct{}], int]
 
 	client  *client[K, V]
 	evictFn func(k K, v V)
@@ -110,6 +114,18 @@ func (g *Cache[K, V]) Meta() (data MetaResponse) {
 	return
 }
 
+// Memory returns the naive approximate total amount of memory this cache is consuming.
+// It will not follow self-referential structures, will treat pointers to structs as 8 bytes, etc.
+// Could use some work, but any work to make it more complete will suffer performance penalties due to
+// reflection. This is already an expensive call.
+func (g *Cache[K, V]) Memory() int {
+	mem := 0
+	for _, c := range g.caches {
+		mem += c.client.Memory()
+	}
+	return mem
+}
+
 // Resize resizes all *lruCaches to the given size
 func (g *Cache[K, V]) Resize(i int) int {
 	evicted := 0
@@ -167,6 +183,7 @@ func newLruCacheWithEvictionFunction[K comparable, V any](capacity int, fn func(
 		MetaChannel:     NewRequestChannel[Request[struct{}], metaResponse](),
 		ResizeChannel:   NewRequestChannel[Request[int], int](),
 		EvictionChannel: NewRequestChannel[Request[int], int](),
+		MemoryChannel:   NewRequestChannel[Request[struct{}], int](),
 		evictFn:         fn,
 	}
 }
@@ -262,6 +279,21 @@ func (c *lruCache[K, V]) Resize(size int) int {
 	return evicted
 }
 
+// Memory returns the amount of memory occupied by this lruCache
+func (c *lruCache[K, V]) Memory() int {
+	mem := 0
+	c.Each(func(k K, v V) {
+		mem += int(unsafe.Sizeof(KVPair[K, V]{k, v}))
+		mem += int(unsafe.Sizeof(k)) * 2
+		mem += int(unsafe.Sizeof(v))
+		mem += int(unsafe.Sizeof(&list.Node[V]{}))
+	})
+	// k * 2 for lru + map
+	// there is still some misc accounting missing here
+	// and there are allocations that can certainly be optimized out
+	return mem
+}
+
 // Size returns the number of active elements in the lruCache.
 func (c *lruCache[K, V]) Size() int {
 	return c.size
@@ -291,6 +323,7 @@ func (c *lruCache[K, V]) NewClient() *client[K, V] {
 		c.MetaChannel,
 		c.ResizeChannel,
 		c.EvictionChannel,
+		c.MemoryChannel,
 		make(chan struct{}),
 	}
 }
@@ -339,6 +372,8 @@ func (c *lruCache[K, V]) serve(ctx context.Context) (client *client[K, V]) {
 			case i := <-c.EvictionChannel.request:
 				c.EvictionChannel.response <- c.EvictTo(i.RequestBody)
 
+			case <-c.MemoryChannel.request:
+				c.MemoryChannel.response <- c.Memory()
 			}
 
 		}

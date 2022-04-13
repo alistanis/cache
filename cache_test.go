@@ -3,14 +3,15 @@ package cache
 import (
 	"context"
 	"fmt"
+	"github.com/alistanis/cache/list"
 	"github.com/stretchr/testify/assert"
 	"log"
 	"math/rand"
 	"os"
 	"runtime"
-	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 // Example_singleCache is a simple example that is shown with a concurrency of 1 in order to illustrate how the smaller LRU
@@ -379,17 +380,14 @@ func TestCache_EvictionFunction(t *testing.T) {
 	errC := make(chan error)
 
 	c := WithEvictionFunction(ctx, 1, 1, func(s string, f *os.File) {
-		st, err := f.Stat()
+		_, err := f.Stat()
 		if err != nil {
 			errC <- err
 			return
 		}
-		// type assertion will fail on other platforms
-		if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
-			log.Printf("Closing file at path %s, fd: %d, inode: %d", s, f.Fd(), st.Sys().(*syscall.Stat_t).Ino)
-		} else {
-			log.Printf("Closing file at path %s, fd: %d", s, f.Fd())
-		}
+
+		log.Printf("Closing file at path %s, fd: %d", s, f.Fd())
+
 		errC <- f.Close()
 	})
 
@@ -500,4 +498,55 @@ func TestCache_Client(t *testing.T) {
 		Assert.EqualValues(vals[i], v)
 		i++
 	})
+}
+
+func TestCache_Memory(t *testing.T) {
+	Assert := assert.New(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	capacity := 5
+	concurrency := 1
+	c := New[int, int](ctx, capacity, concurrency)
+
+	defer c.Wait()
+	defer cancel()
+
+	c.Put(1, 1)
+	c.Put(42, 42)
+	c.Put(314159, 314159)
+
+	iSize := int(unsafe.Sizeof(0))
+	s := iSize * 3 * 2
+	s += iSize * 3
+	s += int(unsafe.Sizeof(&list.Node[int]{})) * 3
+	s += int(unsafe.Sizeof(KVPair[int, int]{0, 0})) * 3
+	Assert.EqualValues(s, c.Memory())
+}
+
+type TestStruct struct {
+	I int
+	S string
+	T *TestStruct
+}
+
+func TestCache_Memory_Struct(t *testing.T) {
+	Assert := assert.New(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	capacity := 5
+	concurrency := 1
+	c := New[int, TestStruct](ctx, capacity, concurrency)
+
+	defer c.Wait()
+	defer cancel()
+
+	c.Put(1, TestStruct{1, "", &TestStruct{2, "", nil}})
+	c.Put(42, TestStruct{1, "", nil})
+	c.Put(314159, TestStruct{1, "hello", nil})
+	iSize := int(unsafe.Sizeof(0))
+	s := iSize * 3 * 2
+	s += int(unsafe.Sizeof(TestStruct{})) * 3
+	s += int(unsafe.Sizeof(&list.Node[TestStruct]{})) * 3
+	s += int(unsafe.Sizeof(KVPair[int, TestStruct]{0, TestStruct{}})) * 3
+	Assert.EqualValues(s, c.Memory())
 }

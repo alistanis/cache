@@ -24,6 +24,9 @@ type client[K comparable, V any] struct {
 	// EvictionChannel is a channel for evicting the lruCache
 	EvictionChannel *RequestChannel[Request[int], int]
 
+	// MemoryChannel is a channel for reporting memory allocated in this lruCache
+	MemoryChannel *RequestChannel[Request[struct{}], int]
+
 	finished chan struct{}
 }
 
@@ -60,6 +63,12 @@ func (c *client[K, V]) Meta() (data metaResponse) {
 	return <-c.MetaChannel.response
 }
 
+// Memory returns a naive sum of memory that this client's lruCache is consuming
+func (c *client[K, V]) Memory() int {
+	c.MemoryChannel.request <- NewRequest[struct{}](struct{}{})
+	return <-c.MemoryChannel.response
+}
+
 // Resize resizes this client's lruCache to i
 func (c *client[K, V]) Resize(i int) int {
 	c.ResizeChannel.request <- NewRequest[int](i)
@@ -83,4 +92,5 @@ func (c *client[K, V]) Wait() {
 	c.MetaChannel.Close()
 	c.EvictionChannel.Close()
 	c.ResizeChannel.Close()
+	c.MemoryChannel.Close()
 }
